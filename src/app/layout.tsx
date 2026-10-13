@@ -27,6 +27,9 @@ export const viewport: Viewport = {
   themeColor: '#17191B',
 };
 
+import { AuthProvider } from '@/context/AuthContext';
+import { AuthGuard } from '@/components/auth/AuthGuard';
+
 export default function RootLayout({
   children,
 }: {
@@ -35,7 +38,11 @@ export default function RootLayout({
   return (
     <html lang="id" className="font-sans">
       <body className="bg-bg text-text-primary antialiased">
-        {children}
+        <AuthProvider>
+          <AuthGuard>
+            {children}
+          </AuthGuard>
+        </AuthProvider>
       </body>
     </html>
   );
