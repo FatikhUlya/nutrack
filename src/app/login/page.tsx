@@ -11,7 +11,6 @@ import {
   EyeOff,
   ArrowRight,
   ShieldCheck,
-  Sparkles,
   AlertCircle,
   CheckCircle2,
   Database,
@@ -22,7 +21,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, isConfigured, signIn, resetPassword, loginAsDemoUser } = useAuth();
+  const { user, isConfigured, signIn, resetPassword } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -93,11 +92,6 @@ export default function LoginPage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleDemoLogin = (role: 'admin' | 'user') => {
-    loginAsDemoUser(role === 'admin' ? 'Administrator' : 'Pengguna Demo', role);
-    router.push('/');
   };
 
   return (
@@ -306,26 +300,6 @@ export default function LoginPage() {
               </span>
               Pembuatan akun baru dilakukan secara terpusat oleh <strong className="text-[#D6FF3F]">Administrator</strong>. Silakan hubungi admin Anda untuk mendapatkan akses login.
             </div>
-          </div>
-
-          {/* Demo Access Options */}
-          <div className="mt-5 pt-4 border-t border-[#2D3134] grid grid-cols-2 gap-2 text-center">
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('admin')}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-[#202326] border border-[#2D3134] hover:border-[#D6FF3F]/40 py-2 text-[11px] font-bold text-[#F4F5F6] hover:text-[#D6FF3F] transition-all"
-            >
-              <Sparkles className="h-3 w-3 text-[#D6FF3F]" />
-              <span>Demo Admin</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('user')}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-[#202326] border border-[#2D3134] hover:border-[#D6FF3F]/40 py-2 text-[11px] font-bold text-[#F4F5F6] hover:text-[#D6FF3F] transition-all"
-            >
-              <Sparkles className="h-3 w-3 text-[#D6FF3F]" />
-              <span>Demo Pengguna</span>
-            </button>
           </div>
         </div>
 
