@@ -1,6 +1,7 @@
 -- ==============================================================================
 -- NUTRACK — Supabase PostgreSQL Database Schema & Row Level Security (RLS)
 -- Jalankan script ini di menu "SQL Editor" pada Supabase Dashboard Anda.
+-- Script ini aman dijalankan berulang kali (Idempotent).
 -- ==============================================================================
 
 -- 1. Enable UUID Extension
@@ -82,6 +83,11 @@ CREATE TABLE IF NOT EXISTS public.saved_foods (
 
 -- RLS Profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can delete own profile" ON public.profiles;
+
 CREATE POLICY "Users can view own profile" ON public.profiles
   FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can insert own profile" ON public.profiles
@@ -93,6 +99,11 @@ CREATE POLICY "Users can delete own profile" ON public.profiles
 
 -- RLS Nutrition Targets
 ALTER TABLE public.nutrition_targets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own nutrition targets" ON public.nutrition_targets;
+DROP POLICY IF EXISTS "Users can insert own nutrition targets" ON public.nutrition_targets;
+DROP POLICY IF EXISTS "Users can update own nutrition targets" ON public.nutrition_targets;
+DROP POLICY IF EXISTS "Users can delete own nutrition targets" ON public.nutrition_targets;
+
 CREATE POLICY "Users can view own nutrition targets" ON public.nutrition_targets
   FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own nutrition targets" ON public.nutrition_targets
@@ -104,6 +115,11 @@ CREATE POLICY "Users can delete own nutrition targets" ON public.nutrition_targe
 
 -- RLS Food Entries
 ALTER TABLE public.food_entries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own food entries" ON public.food_entries;
+DROP POLICY IF EXISTS "Users can insert own food entries" ON public.food_entries;
+DROP POLICY IF EXISTS "Users can update own food entries" ON public.food_entries;
+DROP POLICY IF EXISTS "Users can delete own food entries" ON public.food_entries;
+
 CREATE POLICY "Users can view own food entries" ON public.food_entries
   FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own food entries" ON public.food_entries
@@ -115,6 +131,11 @@ CREATE POLICY "Users can delete own food entries" ON public.food_entries
 
 -- RLS Saved Foods
 ALTER TABLE public.saved_foods ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own saved foods" ON public.saved_foods;
+DROP POLICY IF EXISTS "Users can insert own saved foods" ON public.saved_foods;
+DROP POLICY IF EXISTS "Users can update own saved foods" ON public.saved_foods;
+DROP POLICY IF EXISTS "Users can delete own saved foods" ON public.saved_foods;
+
 CREATE POLICY "Users can view own saved foods" ON public.saved_foods
   FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own saved foods" ON public.saved_foods
