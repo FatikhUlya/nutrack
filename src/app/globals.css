@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── System Font Stack (SF Pro on Apple, Segoe UI on Windows, sans-serif everywhere) ── */
+
+/* ── Design Tokens (Neon Dark Mode) ─────────────────────────────────────────── */
+:root {
+  /* Core background & dark surfaces */
+  --color-bg: #17191B;
+  --color-bg-alt: #1E2124;
+  --color-surface: #202326;
+  --color-surface-elevated: #292D30;
+  --color-surface-hover: #303539;
+  --color-border: #383D41;
+  --color-border-subtle: #2D3134;
+
+  /* Text */
+  --color-text-primary: #F4F5F6;
+  --color-text-secondary: #A7ADB3;
+  --color-text-muted: #747C83;
+
+  /* Primary Accent: Electric Neon Lime */
+  --color-accent: #D6FF3F;
+  --color-accent-hover: #C7F02D;
+  --color-accent-soft: rgba(214, 255, 63, 0.15);
+  --color-accent-contrast: #17191B;
+
+  /* Semantics */
+  --color-success: #65D99A;
+  --color-warning: #FFBF69;
+  --color-danger: #FF6B73;
+  --color-info: #77B7FF;
+
+  /* Macro Colors */
+  --color-carb: #67E8F9;
+  --color-protein: #77B7FF;
+  --color-fat: #C4B5FD;
+
+  /* Radius */
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-md: 18px;
+  --radius-lg: 22px;
+  --radius-xl: 26px;
+  --radius-2xl: 30px;
+
+  /* Typography: SF Pro system font stack */
+  /* SF Pro is active automatically on Apple devices (macOS, iOS/iPadOS) via -apple-system */
+  /* On Windows: 'Segoe UI Variable' (Win 11) → 'Segoe UI' (Win 10) */
+  /* On Android/Linux: 'Helvetica Neue' → 'Arial' → system sans-serif */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont,
+    'SF Pro Display', 'SF Pro Text',
+    'Segoe UI Variable', 'Segoe UI',
+    'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+  --font-system:
+    -apple-system, BlinkMacSystemFont,
+    'SF Pro Display', 'SF Pro Text',
+    'Segoe UI Variable', 'Segoe UI',
+    'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+}
+
+/* ── Base Reset ──────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  color-scheme: dark;
+  font-family: var(--font-sans);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+optgroup,
+select,
+textarea,
+h1, h2, h3, h4, h5, h6,
+p, span, a, label, li,
+th, td {
+  font-family: var(--font-sans);
+}
+
+/* ── Focus Styles ────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #17191B;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2D3134;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #383D41;
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────────── */
+::selection {
+  background: #D6FF3F;
+  color: #17191B;
+}
+
+/* ── Utility Classes ─────────────────────────────────────────────────────────── */
+@layer utilities {
+  .btn-neon {
+    background-color: #D6FF3F;
+    color: #17191B;
+    font-weight: 700;
+    transition: all 0.15s ease-in-out;
+  }
+  .btn-neon:hover {
+    background-color: #C7F02D;
+    box-shadow: 0 0 20px rgba(214, 255, 63, 0.4);
+    transform: translateY(-1px);
+  }
+  .btn-neon:active {
+    transform: scale(0.98);
+  }
+
+  .neon-glow {
+    box-shadow: 0 0 24px rgba(214, 255, 63, 0.35);
+  }
+
+  .neon-text-glow {
+    text-shadow: 0 0 12px rgba(214, 255, 63, 0.6);
+  }
+
+  .progress-ring-fill {
+    transition: stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
