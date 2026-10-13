@@ -3,13 +3,13 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
-
 import { setStorageUserId, hydrateFromSupabase } from '@/lib/database/storage';
 
 export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  role: 'admin' | 'user';
 }
 
 interface AuthContextType {
@@ -20,7 +20,15 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null; message?: string }>;
   signOut: () => Promise<void>;
-  loginAsDemoUser: (name?: string) => void;
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  resetPassword: (email: string) => Promise<{ error: string | null; message?: string }>;
+  createAdminUser: (
+    email: string,
+    password: string,
+    fullName: string,
+    role?: 'admin' | 'user'
+  ) => Promise<{ error: string | null; message?: string }>;
+  loginAsDemoUser: (name?: string, role?: 'admin' | 'user') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,8 +41,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const configured = isSupabaseConfigured();
 
-  // Helper to extract AuthUser from Supabase User
-  const mapSupabaseUser = (sbUser: SupabaseUser): AuthUser => {
+  // Helper to extract AuthUser from Supabase User and profile table
+  const fetchAndMapUser = useCallback(async (sbUser: SupabaseUser): Promise<AuthUser> => {
+    let role: 'admin' | 'user' = (sbUser.user_metadata?.role as 'admin' | 'user') || 'user';
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, display_name')
+        .eq('id', sbUser.id)
+        .single();
+
+      if (profile?.role) {
+        role = profile.role as 'admin' | 'user';
+      }
+    } catch {
+      // fallback
+    }
+
     return {
       id: sbUser.id,
       email: sbUser.email || '',
@@ -43,8 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         sbUser.user_metadata?.display_name ||
         sbUser.email?.split('@')[0] ||
         'Pengguna NUTRACK',
+      role,
     };
-  };
+  }, []);
 
   useEffect(() => {
     if (user?.id) {
@@ -58,10 +83,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (configured) {
       // 1. Get current session
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
         setSession(session);
         if (session?.user) {
-          const mapped = mapSupabaseUser(session.user);
+          const mapped = await fetchAndMapUser(session.user);
           setUser(mapped);
           setStorageUserId(mapped.id);
           hydrateFromSupabase(mapped.id).catch(() => {});
@@ -73,10 +98,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // 2. Listen to auth state changes
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (_event, session) => {
+        async (_event, session) => {
           setSession(session);
           if (session?.user) {
-            setUser(mapSupabaseUser(session.user));
+            const mapped = await fetchAndMapUser(session.user);
+            setUser(mapped);
+            setStorageUserId(mapped.id);
+            hydrateFromSupabase(mapped.id).catch(() => {});
           } else {
             setUser(null);
           }
@@ -101,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setIsLoading(false);
     }
-  }, [configured]);
+  }, [configured, fetchAndMapUser]);
 
   // Sign In with email & password
   const signIn = useCallback(
@@ -116,11 +144,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return { error: null };
       } else {
-        // Mock login for offline / unconfigured mode
+        // Mock login
         const demoUser: AuthUser = {
           id: `local-user-${email.replace(/[^a-zA-Z0-9]/g, '_')}`,
           email,
           displayName: email.split('@')[0],
+          role: email.toLowerCase().includes('admin') ? 'admin' : 'user',
         };
         setUser(demoUser);
         if (typeof window !== 'undefined') {
@@ -132,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [configured]
   );
 
-  // Sign Up with email, password & full name
+  // Sign Up (admin or self)
   const signUp = useCallback(
     async (
       email: string,
@@ -155,28 +184,115 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (data.session) {
-          return { error: null, message: 'Pendaftaran berhasil!' };
+          return { error: null, message: 'Akun berhasil dibuat!' };
         } else {
           return {
             error: null,
-            message: 'Silakan periksa email Anda untuk konfirmasi pendaftaran akun.',
+            message: 'Silakan periksa email untuk konfirmasi pendaftaran akun.',
           };
         }
       } else {
-        // Mock sign up
         const demoUser: AuthUser = {
           id: `local-user-${Date.now()}`,
           email,
           displayName: fullName || email.split('@')[0],
+          role: 'user',
         };
         setUser(demoUser);
         if (typeof window !== 'undefined') {
           localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(demoUser));
         }
-        return { error: null, message: 'Pendaftaran lokal berhasil!' };
+        return { error: null, message: 'Akun lokal berhasil dibuat!' };
       }
     },
     [configured]
+  );
+
+  // Update Password (by user)
+  const updatePassword = useCallback(
+    async (newPassword: string): Promise<{ error: string | null }> => {
+      if (configured) {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+        if (error) {
+          return { error: error.message };
+        }
+        return { error: null };
+      } else {
+        return { error: null };
+      }
+    },
+    [configured]
+  );
+
+  // Reset Password via Email
+  const resetPassword = useCallback(
+    async (email: string): Promise<{ error: string | null; message?: string }> => {
+      if (configured) {
+        const redirectUrl =
+          typeof window !== 'undefined'
+            ? `${window.location.origin}/login`
+            : undefined;
+
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: redirectUrl,
+        });
+
+        if (error) {
+          return { error: error.message };
+        }
+        return {
+          error: null,
+          message: `Tautan reset kata sandi telah dikirim ke ${email}. Silakan periksa kotak masuk/spam email Anda.`,
+        };
+      } else {
+        return {
+          error: null,
+          message: `(Mode Lokal) Instruksi reset telah disimulasikan ke ${email}.`,
+        };
+      }
+    },
+    [configured]
+  );
+
+  // Admin Create User API call
+  const createAdminUser = useCallback(
+    async (
+      email: string,
+      password: string,
+      fullName: string,
+      role: 'admin' | 'user' = 'user'
+    ): Promise<{ error: string | null; message?: string }> => {
+      if (configured && session?.access_token) {
+        try {
+          const res = await fetch('/api/admin/create-user', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ email, password, fullName, role }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            return { error: data.error || 'Gagal membuat akun pengguna.' };
+          }
+          return { error: null, message: data.message };
+        } catch (e: unknown) {
+          const err = e as Error;
+          return { error: err.message || 'Terjadi kesalahan jaringan.' };
+        }
+      } else {
+        // Fallback for unconfigured
+        return {
+          error: null,
+          message: `Akun untuk ${email} berhasil disimulasikan secara lokal!`,
+        };
+      }
+    },
+    [configured, session]
   );
 
   // Sign Out
@@ -192,11 +308,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [configured]);
 
   // Quick Demo Login
-  const loginAsDemoUser = useCallback((name = 'Demo User') => {
+  const loginAsDemoUser = useCallback((name = 'Admin Demo', role: 'admin' | 'user' = 'admin') => {
     const demoUser: AuthUser = {
-      id: 'demo-user-nutrack-public',
-      email: 'demo@nutrack.app',
+      id: 'demo-user-nutrack-admin',
+      email: 'admin@nutrack.app',
       displayName: name,
+      role,
     };
     setUser(demoUser);
     if (typeof window !== 'undefined') {
@@ -214,6 +331,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signUp,
         signOut,
+        updatePassword,
+        resetPassword,
+        createAdminUser,
         loginAsDemoUser,
       }}
     >

@@ -11,6 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   display_name TEXT,
+  role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
   sex TEXT CHECK (sex IN ('male', 'female')),
   age INTEGER,
   weight_kg NUMERIC,
@@ -21,6 +22,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Pastikan kolom role ada jika tabel sudah terlanjur dibuat sebelumnya
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user'));
 
 -- 3. Nutrition Targets Table
 CREATE TABLE IF NOT EXISTS public.nutrition_targets (
@@ -60,7 +64,7 @@ CREATE TABLE IF NOT EXISTS public.food_entries (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Saved Foods Table (Database Makanan Favorit/Tersimpan)
+-- 5. Saved Foods Table (Database Makanan Favorit)
 CREATE TABLE IF NOT EXISTS public.saved_foods (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
@@ -76,26 +80,38 @@ CREATE TABLE IF NOT EXISTS public.saved_foods (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Helper Function: Cek apakah user saat ini adalah admin
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- ==============================================================================
 -- 6. Row Level Security (RLS) — Menjamin isolasi data total per pengguna!
--- Setiap user hanya bisa melihat, menambah, mengubah, dan menghapus datanya sendiri.
+-- User hanya bisa mengelola datanya sendiri, kecuali Admin yang bisa melihat profil pengguna.
 -- ==============================================================================
 
 -- RLS Profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own profile or admin can view all" ON public.profiles;
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can delete own profile" ON public.profiles;
 
-CREATE POLICY "Users can view own profile" ON public.profiles
-  FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can view own profile or admin can view all" ON public.profiles
+  FOR SELECT USING (auth.uid() = id OR public.is_admin());
 CREATE POLICY "Users can insert own profile" ON public.profiles
-  FOR INSERT WITH CHECK (auth.uid() = id);
+  FOR INSERT WITH CHECK (auth.uid() = id OR public.is_admin());
 CREATE POLICY "Users can update own profile" ON public.profiles
-  FOR UPDATE USING (auth.uid() = id);
+  FOR UPDATE USING (auth.uid() = id OR public.is_admin());
 CREATE POLICY "Users can delete own profile" ON public.profiles
-  FOR DELETE USING (auth.uid() = id);
+  FOR DELETE USING (auth.uid() = id OR public.is_admin());
 
 -- RLS Nutrition Targets
 ALTER TABLE public.nutrition_targets ENABLE ROW LEVEL SECURITY;
@@ -146,15 +162,22 @@ CREATE POLICY "Users can delete own saved foods" ON public.saved_foods
   FOR DELETE USING (auth.uid() = user_id);
 
 -- ==============================================================================
--- 7. Trigger Otomatis: Buat Profil saat User Baru Mendaftar (Sign Up)
+-- 7. Trigger Otomatis: Buat Profil saat User Baru Terdaftar
+-- Akun pertama otomatis menjadi Admin. Akun berikutnya menjadi User biasa.
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  is_first BOOLEAN;
 BEGIN
-  INSERT INTO public.profiles (id, display_name, sex, age, weight_kg, height_cm, activity_level, goal)
+  -- Cek apakah ini user pertama di database
+  SELECT (COUNT(*) = 0) INTO is_first FROM public.profiles;
+
+  INSERT INTO public.profiles (id, display_name, role, sex, age, weight_kg, height_cm, activity_level, goal)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+    CASE WHEN is_first THEN 'admin' ELSE COALESCE(NEW.raw_user_meta_data->>'role', 'user') END,
     'male',
     25,
     65,
@@ -162,7 +185,9 @@ BEGIN
     'moderate',
     'maintenance'
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE
+    SET display_name = EXCLUDED.display_name;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -172,7 +197,7 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Indexing for performance
+-- Indexing
 CREATE INDEX IF NOT EXISTS idx_food_entries_user_date ON public.food_entries (user_id, consumption_date);
 CREATE INDEX IF NOT EXISTS idx_nutrition_targets_user ON public.nutrition_targets (user_id, effective_date);
 CREATE INDEX IF NOT EXISTS idx_saved_foods_user ON public.saved_foods (user_id);
