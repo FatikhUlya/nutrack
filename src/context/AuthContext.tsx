@@ -50,10 +50,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('profiles')
         .select('role, display_name')
         .eq('id', sbUser.id)
-        .single();
+        .maybeSingle();
 
       if (profile?.role) {
         role = profile.role as 'admin' | 'user';
+      } else {
+        const { count } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true });
+        if (count === null || count <= 1) {
+          role = 'admin';
+        }
       }
     } catch {
       // fallback
