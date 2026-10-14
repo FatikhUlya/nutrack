@@ -34,24 +34,29 @@ export function MealDetailModal({
 
   const title = MEAL_TYPE_LABELS[mealType];
 
-  const budgetRatios: Record<MealType, { min: number; max: number }> = {
-    breakfast: { min: 400, max: 450 },
-    lunch: { min: 450, max: 600 },
-    dinner: { min: 450, max: 550 },
-    snack: { min: 150, max: 250 },
+  const totalDailyTarget = target?.calorieTargetKcal ?? 1850;
+  const ratioPercentages: Record<MealType, { pct: number; minPct: number }> = {
+    breakfast: { pct: 0.25, minPct: 0.20 },
+    lunch: { pct: 0.35, minPct: 0.30 },
+    dinner: { pct: 0.30, minPct: 0.25 },
+    snack: { pct: 0.10, minPct: 0.05 },
   };
 
-  const recommendedRange = budgetRatios[mealType];
-  const mealTargetCal = recommendedRange.max;
+  const ratio = ratioPercentages[mealType];
+  const mealTargetCal = Math.round(totalDailyTarget * ratio.pct);
+  const recommendedRange = {
+    min: Math.round(totalDailyTarget * ratio.minPct),
+    max: mealTargetCal,
+  };
 
   const totalCalories = entries.reduce((s, e) => s + e.caloriesKcal, 0);
   const totalProtein = entries.reduce((s, e) => s + e.proteinG, 0);
   const totalCarbs = entries.reduce((s, e) => s + e.carbsG, 0);
   const totalFat = entries.reduce((s, e) => s + e.fatG, 0);
 
-  const targetProteinG = Math.round((mealTargetCal * 0.3) / 4);
-  const targetCarbsG = Math.round((mealTargetCal * 0.45) / 4);
-  const targetFatG = Math.round((mealTargetCal * 0.25) / 9);
+  const targetProteinG = target ? Math.round(target.proteinTargetG * ratio.pct) : Math.round((mealTargetCal * 0.3) / 4);
+  const targetCarbsG = target ? Math.round(target.carbsTargetG * ratio.pct) : Math.round((mealTargetCal * 0.45) / 4);
+  const targetFatG = target ? Math.round(target.fatTargetG * ratio.pct) : Math.round((mealTargetCal * 0.25) / 9);
 
   // Mini circular progress ring component
   const MiniRing = ({

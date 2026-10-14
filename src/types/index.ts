@@ -145,6 +145,17 @@ export interface DailyNutrition {
   hasData: boolean;
 }
 
+// ─── Weight Log ───────────────────────────────────────────────────────────────
+
+export interface WeightEntry {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  weightKg: number;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface NutrientStatusResult {
   status: NutrientStatusLevel;
   percentage: number; // 0–100+

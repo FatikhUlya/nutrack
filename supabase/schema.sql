@@ -201,3 +201,33 @@ CREATE TRIGGER on_auth_user_created
 CREATE INDEX IF NOT EXISTS idx_food_entries_user_date ON public.food_entries (user_id, consumption_date);
 CREATE INDEX IF NOT EXISTS idx_nutrition_targets_user ON public.nutrition_targets (user_id, effective_date);
 CREATE INDEX IF NOT EXISTS idx_saved_foods_user ON public.saved_foods (user_id);
+
+-- 6. Weight Log Table (Riwayat Berat Badan)
+CREATE TABLE IF NOT EXISTS public.weight_log (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  weight_kg NUMERIC NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, date)
+);
+
+-- RLS Weight Log
+ALTER TABLE public.weight_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own weight log" ON public.weight_log;
+DROP POLICY IF EXISTS "Users can insert own weight log" ON public.weight_log;
+DROP POLICY IF EXISTS "Users can update own weight log" ON public.weight_log;
+DROP POLICY IF EXISTS "Users can delete own weight log" ON public.weight_log;
+
+CREATE POLICY "Users can view own weight log" ON public.weight_log
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own weight log" ON public.weight_log
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own weight log" ON public.weight_log
+  FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own weight log" ON public.weight_log
+  FOR DELETE USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS idx_weight_log_user_date ON public.weight_log (user_id, date);
+

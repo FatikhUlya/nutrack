@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -35,10 +35,27 @@ export default function LoginPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // If already logged in, redirect to home
-  if (user) {
-    router.replace('/');
-  }
+  // If already logged in, redirect to home safely via useEffect
+  useEffect(() => {
+    if (user) {
+      router.replace('/');
+      return;
+    }
+
+    // Check for Supabase error or confirmation tokens in hash
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const errorDesc = params.get('error_description');
+      const errorCode = params.get('error_code');
+
+      if (errorCode === 'otp_expired') {
+        setErrorMsg('Tautan email telah kedaluwarsa atau tidak valid. Silakan lakukan reset kata sandi atau masuk kembali.');
+      } else if (errorDesc) {
+        setErrorMsg(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+      }
+    }
+  }, [user, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

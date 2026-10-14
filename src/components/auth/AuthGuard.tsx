@@ -16,7 +16,8 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   useEffect(() => {
     if (!isLoading && !user && pathname !== '/login') {
-      router.replace('/login');
+      const hash = typeof window !== 'undefined' ? window.location.hash : '';
+      router.replace(hash ? `/login${hash}` : '/login');
     }
   }, [isLoading, user, pathname, router]);
 

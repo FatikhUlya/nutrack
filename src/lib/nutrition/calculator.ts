@@ -235,7 +235,7 @@ export function calculateNutritionTargets(
     if (bmi >= 30) {
       // Obesitas (BMI >= 30): 1.5g/kg actual weight (protects lean muscle without excessive protein load)
       proteinTargetG = profile.weightKg * 1.5;
-      macroNotes = 'Alokasi protein disesuaikan untuk program penurunan berat badan obesitas (1.5g/kg BB).';
+      macroNotes = 'Alokasi protein disesuaikan untuk program penurunan berat badan Obesitas (1.5g/kg BB).';
     } else if (bmi >= 25) {
       // Overweight (BMI 25 - 29.9): 1.7g/kg
       proteinTargetG = profile.weightKg * 1.7;

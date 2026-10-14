@@ -15,7 +15,6 @@ import { useFoodDiary } from '@/hooks/useFoodDiary';
 import { useNutritionTargets } from '@/hooks/useNutritionTargets';
 import { useProfile } from '@/hooks/useProfile';
 import { useToast } from '@/hooks/useToast';
-import { seedInitialDataIfEmpty } from '@/lib/database/seed';
 import { today } from '@/lib/utils';
 import type { MealType, CreateFoodEntryInput } from '@/types';
 import { Scan, Sparkles, ArrowRight } from 'lucide-react';
@@ -38,7 +37,6 @@ export default function DashboardPage() {
   const { entries, totals, byMeal, addEntry, deleteEntry } = useFoodDiary(selectedDate);
 
   useEffect(() => {
-    seedInitialDataIfEmpty();
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const dateParam = params.get('date');

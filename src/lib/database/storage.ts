@@ -13,10 +13,11 @@ import type {
   NutritionTarget,
   FoodEntry,
   SavedFood,
+  WeightEntry,
   CreateFoodEntryInput,
   UpdateFoodEntryInput,
 } from '@/types';
-import { generateId, toDateString } from '@/lib/utils';
+import { generateId, toDateString, isUuid } from '@/lib/utils';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 // ─── Active User Partitioning ──────────────────────────────────────────────────
@@ -49,6 +50,7 @@ function getKeys(userId = getStorageUserId()) {
     NUTRITION_TARGETS: `nutrack:${safeId}:nutrition_targets`,
     FOOD_ENTRIES: `nutrack:${safeId}:food_entries`,
     SAVED_FOODS: `nutrack:${safeId}:saved_foods`,
+    WEIGHT_LOG: `nutrack:${safeId}:weight_log`,
   };
 }
 
@@ -122,6 +124,36 @@ export function saveProfile(
       });
   }
 
+  // Sync weight change to weight_log for today
+  if (data.weightKg) {
+    const todayStr = toDateString(new Date());
+    const weightEntries = getWeightLog();
+    const existingWeight = weightEntries.find((e) => e.date === todayStr);
+    if (!existingWeight || existingWeight.weightKg !== data.weightKg) {
+      const entryId = existingWeight && isUuid(existingWeight.id) ? existingWeight.id : generateId();
+      const updatedLog: WeightEntry[] = existingWeight
+        ? weightEntries.map((e) => e.date === todayStr ? { ...e, weightKg: data.weightKg, createdAt: now } : e)
+        : [...weightEntries, { id: entryId, userId, date: todayStr, weightKg: data.weightKg, createdAt: now }];
+      updatedLog.sort((a, b) => a.date.localeCompare(b.date));
+      writeJSON(getKeys().WEIGHT_LOG, updatedLog);
+
+      if (isSupabaseConfigured() && userId && userId !== 'local') {
+        supabase
+          .from('weight_log')
+          .upsert({
+            id: entryId,
+            user_id: userId,
+            date: todayStr,
+            weight_kg: data.weightKg,
+            created_at: now,
+          })
+          .then(({ error }) => {
+            if (error) console.error('[Supabase] weight_log upsert from saveProfile failed:', error.message);
+          });
+      }
+    }
+  }
+
   return profile;
 }
 
@@ -169,7 +201,7 @@ export function saveNutritionTarget(
   const newTarget: NutritionTarget = {
     ...target,
     userId: target.userId || userId,
-    id: existingIndex >= 0 ? targets[existingIndex].id : generateId(),
+    id: existingIndex >= 0 && isUuid(targets[existingIndex].id) ? targets[existingIndex].id : generateId(),
     createdAt: now,
   };
 
@@ -491,6 +523,7 @@ export function deleteSavedFood(id: string): boolean {
 
 // ─── Supabase Cloud Hydration / Sync ──────────────────────────────────────────
 
+/** Fetch all data from Supabase and cache to localStorage. Called on login & page load. */
 export async function hydrateFromSupabase(userId: string): Promise<void> {
   if (!isSupabaseConfigured() || !userId || userId === 'local') return;
 
@@ -519,57 +552,58 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
       writeJSON(getKeys(userId).PROFILE, mappedProfile);
     }
 
-    // 2. Fetch Food Entries
+    // 2. Fetch Food Entries — always overwrite localStorage with cloud data
     const { data: entriesData } = await supabase
       .from('food_entries')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .order('consumption_date', { ascending: false });
 
-    if (entriesData && entriesData.length > 0) {
-      const mappedEntries: FoodEntry[] = entriesData.map(e => ({
-        id: e.id,
-        userId: e.user_id,
-        consumptionDate: e.consumption_date,
-        mealType: e.meal_type,
-        foodName: e.food_name,
-        quantity: Number(e.quantity),
-        servingUnit: e.serving_unit,
-        weightGrams: e.weight_grams ? Number(e.weight_grams) : undefined,
-        caloriesKcal: Number(e.calories_kcal),
-        proteinG: Number(e.protein_g),
-        carbsG: Number(e.carbs_g),
-        fatG: Number(e.fat_g),
-        source: e.source || 'manual',
-        aiEstimated: Boolean(e.ai_estimated),
-        estimationNotes: e.estimation_notes,
-        notes: e.notes,
-        createdAt: e.created_at,
-        updatedAt: e.updated_at,
-      }));
-      writeJSON(getKeys(userId).FOOD_ENTRIES, mappedEntries);
-    }
+    const mappedEntries: FoodEntry[] = (entriesData ?? []).map(e => ({
+      id: e.id,
+      userId: e.user_id,
+      consumptionDate: e.consumption_date,
+      mealType: e.meal_type,
+      foodName: e.food_name,
+      quantity: Number(e.quantity),
+      servingUnit: e.serving_unit,
+      weightGrams: e.weight_grams ? Number(e.weight_grams) : undefined,
+      caloriesKcal: Number(e.calories_kcal),
+      proteinG: Number(e.protein_g),
+      carbsG: Number(e.carbs_g),
+      fatG: Number(e.fat_g),
+      source: e.source || 'manual',
+      aiEstimated: Boolean(e.ai_estimated),
+      estimationNotes: e.estimation_notes,
+      notes: e.notes,
+      createdAt: e.created_at,
+      updatedAt: e.updated_at,
+    }));
+    // Always write (even empty array) to ensure localStorage reflects cloud state
+    writeJSON(getKeys(userId).FOOD_ENTRIES, mappedEntries);
 
     // 3. Fetch Nutrition Targets
     const { data: targetsData } = await supabase
       .from('nutrition_targets')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .order('effective_date', { ascending: true });
 
-    if (targetsData && targetsData.length > 0) {
-      const mappedTargets: NutritionTarget[] = targetsData.map(t => ({
-        id: t.id,
-        userId: t.user_id,
-        effectiveDate: t.effective_date,
-        bmrKcal: Number(t.bmr_kcal),
-        tdeeKcal: Number(t.tdee_kcal),
-        calorieTargetKcal: Number(t.calorie_target_kcal),
-        proteinTargetG: Number(t.protein_target_g),
-        carbsTargetG: Number(t.carbs_target_g),
-        fatTargetG: Number(t.fat_target_g),
-        calculationVersion: t.calculation_version || '1.0',
-        goal: t.goal || 'maintenance',
-        createdAt: t.created_at,
-      }));
+    const mappedTargets: NutritionTarget[] = (targetsData ?? []).map(t => ({
+      id: t.id,
+      userId: t.user_id,
+      effectiveDate: t.effective_date,
+      bmrKcal: Number(t.bmr_kcal),
+      tdeeKcal: Number(t.tdee_kcal),
+      calorieTargetKcal: Number(t.calorie_target_kcal),
+      proteinTargetG: Number(t.protein_target_g),
+      carbsTargetG: Number(t.carbs_target_g),
+      fatTargetG: Number(t.fat_target_g),
+      calculationVersion: t.calculation_version || '1.0',
+      goal: t.goal || 'maintenance',
+      createdAt: t.created_at,
+    }));
+    if (mappedTargets.length > 0) {
       writeJSON(getKeys(userId).NUTRITION_TARGETS, mappedTargets);
     }
 
@@ -579,31 +613,287 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
       .select('*')
       .eq('user_id', userId);
 
-    if (savedData && savedData.length > 0) {
-      const mappedFoods: SavedFood[] = savedData.map(f => ({
-        id: f.id,
-        userId: f.user_id,
-        foodName: f.food_name,
-        defaultQuantity: Number(f.default_quantity) || 1,
-        servingUnit: f.serving_unit || 'porsi',
-        caloriesKcal: Number(f.calories_kcal),
-        proteinG: Number(f.protein_g),
-        carbsG: Number(f.carbs_g),
-        fatG: Number(f.fat_g),
-        notes: f.notes,
-        createdAt: f.created_at,
-        updatedAt: f.updated_at,
-      }));
+    const mappedFoods: SavedFood[] = (savedData ?? []).map(f => ({
+      id: f.id,
+      userId: f.user_id,
+      foodName: f.food_name,
+      defaultQuantity: Number(f.default_quantity) || 1,
+      servingUnit: f.serving_unit || 'porsi',
+      caloriesKcal: Number(f.calories_kcal),
+      proteinG: Number(f.protein_g),
+      carbsG: Number(f.carbs_g),
+      fatG: Number(f.fat_g),
+      notes: f.notes,
+      createdAt: f.created_at,
+      updatedAt: f.updated_at,
+    }));
+    if (mappedFoods.length > 0) {
       writeJSON(getKeys(userId).SAVED_FOODS, mappedFoods);
     }
+
+    console.log(`[storage] Hydrated ${mappedEntries.length} entries, ${mappedTargets.length} targets, ${mappedFoods.length} saved foods from Supabase for user ${userId.slice(0, 8)}...`);
   } catch (err) {
     console.error('[storage] Failed to hydrate from Supabase:', err);
   }
 }
 
+/**
+ * Fetch food entries directly from Supabase for a specific date.
+ * Bypasses localStorage — guarantees cross-device sync.
+ */
+export async function getFoodEntriesByDateFromSupabase(
+  userId: string,
+  date: string,
+): Promise<FoodEntry[]> {
+  if (!isSupabaseConfigured() || !userId || userId === 'local') return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('food_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('consumption_date', date)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    const mapped: FoodEntry[] = (data ?? []).map(e => ({
+      id: e.id,
+      userId: e.user_id,
+      consumptionDate: e.consumption_date,
+      mealType: e.meal_type,
+      foodName: e.food_name,
+      quantity: Number(e.quantity),
+      servingUnit: e.serving_unit,
+      weightGrams: e.weight_grams ? Number(e.weight_grams) : undefined,
+      caloriesKcal: Number(e.calories_kcal),
+      proteinG: Number(e.protein_g),
+      carbsG: Number(e.carbs_g),
+      fatG: Number(e.fat_g),
+      source: e.source || 'manual',
+      aiEstimated: Boolean(e.ai_estimated),
+      estimationNotes: e.estimation_notes,
+      notes: e.notes,
+      createdAt: e.created_at,
+      updatedAt: e.updated_at,
+    }));
+
+    // Merge into localStorage cache so sync stays consistent
+    const allEntries = readJSON<FoodEntry[]>(getKeys(userId).FOOD_ENTRIES) ?? [];
+    const otherEntries = allEntries.filter(e => e.consumptionDate !== date);
+    writeJSON(getKeys(userId).FOOD_ENTRIES, [...otherEntries, ...mapped]);
+
+    return mapped;
+  } catch (err) {
+    console.error('[storage] Failed to fetch entries from Supabase:', err);
+    // Fallback to localStorage
+    return getFoodEntriesByDate(date);
+  }
+}
+
+/**
+ * Fetch daily nutrition summaries across a date range directly from Supabase,
+ * ensuring statistics stay accurate across all devices.
+ */
+export async function getDailyNutritionForRangeFromSupabase(
+  userId: string,
+  startDate: string,
+  endDate: string,
+) {
+  if (!isSupabaseConfigured() || !userId || userId === 'local') {
+    return getDailyNutritionForRange(startDate, endDate);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('food_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('consumption_date', startDate)
+      .lte('consumption_date', endDate)
+      .order('consumption_date', { ascending: true });
+
+    if (error) throw error;
+
+    const mapped: FoodEntry[] = (data ?? []).map(e => ({
+      id: e.id,
+      userId: e.user_id,
+      consumptionDate: e.consumption_date,
+      mealType: e.meal_type,
+      foodName: e.food_name,
+      quantity: Number(e.quantity),
+      servingUnit: e.serving_unit,
+      weightGrams: e.weight_grams ? Number(e.weight_grams) : undefined,
+      caloriesKcal: Number(e.calories_kcal),
+      proteinG: Number(e.protein_g),
+      carbsG: Number(e.carbs_g),
+      fatG: Number(e.fat_g),
+      source: e.source || 'manual',
+      aiEstimated: Boolean(e.ai_estimated),
+      estimationNotes: e.estimation_notes,
+      notes: e.notes,
+      createdAt: e.created_at,
+      updatedAt: e.updated_at,
+    }));
+
+    // Cache locally
+    const allEntries = readJSON<FoodEntry[]>(getKeys(userId).FOOD_ENTRIES) ?? [];
+    const datesInRange = new Set(mapped.map(m => m.consumptionDate));
+    const keptEntries = allEntries.filter(e => !datesInRange.has(e.consumptionDate));
+    writeJSON(getKeys(userId).FOOD_ENTRIES, [...keptEntries, ...mapped]);
+
+    const byDate = new Map<string, FoodEntry[]>();
+    mapped.forEach(e => {
+      const arr = byDate.get(e.consumptionDate) ?? [];
+      arr.push(e);
+      byDate.set(e.consumptionDate, arr);
+    });
+
+    const results = [];
+    const current = new Date(startDate);
+    const end = new Date(endDate);
+
+    while (current <= end) {
+      const dateStr = toDateString(current);
+      const dayEntries = byDate.get(dateStr) ?? [];
+      results.push({
+        date: dateStr,
+        caloriesKcal: dayEntries.reduce((s, e) => s + e.caloriesKcal, 0),
+        proteinG: dayEntries.reduce((s, e) => s + e.proteinG, 0),
+        carbsG: dayEntries.reduce((s, e) => s + e.carbsG, 0),
+        fatG: dayEntries.reduce((s, e) => s + e.fatG, 0),
+        entryCount: dayEntries.length,
+      });
+      current.setDate(current.getDate() + 1);
+    }
+
+    return results;
+  } catch (err) {
+    console.error('[storage] Failed to fetch date range from Supabase:', err);
+    return getDailyNutritionForRange(startDate, endDate);
+  }
+}
+
+
+// ─── Weight Log ────────────────────────────────────────────────────────────────
+
+export function getWeightLog(userId?: string): WeightEntry[] {
+  return readJSON<WeightEntry[]>(getKeys(userId).WEIGHT_LOG) ?? [];
+}
+
+export function saveWeightEntry(weightKg: number, date?: string, notes?: string): WeightEntry {
+  const userId = getStorageUserId();
+  const dateStr = date ?? toDateString(new Date());
+  const now = new Date().toISOString();
+  const entries = getWeightLog();
+
+  // Upsert: satu entri per hari
+  const existingIndex = entries.findIndex((e) => e.date === dateStr);
+  const entry: WeightEntry = {
+    id: existingIndex >= 0 && isUuid(entries[existingIndex].id) ? entries[existingIndex].id : generateId(),
+    userId,
+    date: dateStr,
+    weightKg,
+    notes,
+    createdAt: existingIndex >= 0 ? entries[existingIndex].createdAt : now,
+  };
+
+  if (existingIndex >= 0) {
+    entries[existingIndex] = entry;
+  } else {
+    entries.push(entry);
+  }
+
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  writeJSON(getKeys().WEIGHT_LOG, entries);
+
+  // Sync to Supabase
+  if (isSupabaseConfigured() && userId && userId !== 'local') {
+    supabase
+      .from('weight_log')
+      .upsert({
+        id: entry.id,
+        user_id: userId,
+        date: entry.date,
+        weight_kg: weightKg,
+        notes,
+        created_at: entry.createdAt,
+      })
+      .then(({ error }) => {
+        if (error) console.error('[Supabase] weight_log upsert failed:', error.message);
+      });
+  }
+
+  // Also update profile current weight
+  const profile = getProfile();
+  if (profile) {
+    saveProfile({ ...profile, weightKg });
+  }
+
+  return entry;
+}
+
+export async function getWeightLogFromSupabase(userId: string, limit = 365): Promise<WeightEntry[]> {
+  if (!isSupabaseConfigured() || !userId || userId === 'local') {
+    return getWeightLog();
+  }
+  try {
+    const { data, error } = await supabase
+      .from('weight_log')
+      .select('id, user_id, date, weight_kg, notes, created_at')
+      .eq('user_id', userId)
+      .order('date', { ascending: true })
+      .limit(limit);
+
+    if (error) throw error;
+    if (!data || data.length === 0) return getWeightLog();
+
+    const mapped: WeightEntry[] = (data as any[]).map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      date: r.date,
+      weightKg: r.weight_kg,
+      notes: r.notes,
+      createdAt: r.created_at,
+    }));
+
+    // Cache locally
+    writeJSON(getKeys(userId).WEIGHT_LOG, mapped);
+    return mapped;
+  } catch (err) {
+    console.error('[storage] Failed to fetch weight log from Supabase:', err);
+    return getWeightLog();
+  }
+}
+
 // ─── Wipe All Data for Current User ──────────────────────────────────────────
 
-export function clearAllData(): void {
+
+export async function clearAllData(): Promise<void> {
   const userId = getStorageUserId();
-  Object.values(getKeys(userId)).forEach(removeKey);
+
+  // Bersihkan semua local cache data nutrack (kecuali auth info)
+  if (typeof window !== 'undefined') {
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('nutrack:') && !k.startsWith('nutrack:auth:')) {
+        toRemove.push(k);
+      }
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+  }
+
+  // Jika akun terhubung ke Supabase, bersihkan juga data food_entries & targets cloud
+  if (isSupabaseConfigured() && userId && userId !== 'local') {
+    try {
+      await Promise.all([
+        supabase.from('food_entries').delete().eq('user_id', userId),
+        supabase.from('nutrition_targets').delete().eq('user_id', userId),
+        supabase.from('saved_foods').delete().eq('user_id', userId),
+      ]);
+    } catch (e) {
+      console.error('[storage] Gagal menghapus data dari Supabase:', e);
+    }
+  }
 }

@@ -3,15 +3,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { UserProfile } from '@/types';
 import * as storage from '@/lib/database/storage';
+import { useAuth } from '@/context/AuthContext';
 
 export function useProfile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  const { user } = useAuth();
+
+  // Reload profile dari localStorage (sudah dihydrate dari Supabase saat login)
+  const loadProfile = useCallback(() => {
     setProfile(storage.getProfile());
     setIsLoading(false);
   }, []);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile, user?.id]); // Reload jika user berubah
 
   const saveProfile = useCallback(
     (data: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'>) => {

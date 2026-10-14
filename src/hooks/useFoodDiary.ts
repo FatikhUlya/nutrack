@@ -3,31 +3,58 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { FoodEntry, CreateFoodEntryInput, UpdateFoodEntryInput, MealType } from '@/types';
 import * as storage from '@/lib/database/storage';
+import { getFoodEntriesByDateFromSupabase } from '@/lib/database/storage';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { today } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 export function useFoodDiary(date?: string) {
   const targetDate = date ?? today();
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const reload = useCallback(() => {
-    setEntries(storage.getFoodEntriesByDate(targetDate));
-    setIsLoading(false);
-  }, [targetDate]);
+  const { user, isLoading: authLoading } = useAuth();
+  const userId = user?.id ?? storage.getStorageUserId();
+
+  /**
+   * reload — baca dari Supabase dulu (jika connected), fallback ke localStorage.
+   * Ini menjamin data selalu sinkron lintas perangkat.
+   */
+  const reload = useCallback(async () => {
+    if (isSupabaseConfigured() && authLoading) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (isSupabaseConfigured() && userId && userId !== 'local') {
+        // Fetch langsung dari cloud — guarantees cross-device sync
+        const cloudEntries = await getFoodEntriesByDateFromSupabase(userId, targetDate);
+        setEntries(cloudEntries);
+      } else {
+        // Fallback ke localStorage jika Supabase tidak dikonfigurasi
+        setEntries(storage.getFoodEntriesByDate(targetDate));
+      }
+    } catch {
+      // Jika cloud gagal, tetap gunakan cache lokal
+      setEntries(storage.getFoodEntriesByDate(targetDate));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [targetDate, userId, authLoading]);
 
   useEffect(() => {
-    setIsLoading(true);
     reload();
   }, [reload]);
 
   const addEntry = useCallback(
     (input: CreateFoodEntryInput) => {
-      const userId = 'local'; // placeholder until auth is added
-      const entry = storage.createFoodEntry({ ...input, userId });
+      const uid = userId || 'local';
+      const entry = storage.createFoodEntry({ ...input, userId: uid });
       setEntries(prev => [...prev, entry]);
       return entry;
     },
-    [],
+    [userId],
   );
 
   const updateEntry = useCallback(

@@ -15,7 +15,6 @@ import { useFoodDiary } from '@/hooks/useFoodDiary';
 import { useToast } from '@/hooks/useToast';
 import { calculateNutritionTargets } from '@/lib/nutrition/calculator';
 import { clearAllData } from '@/lib/database/storage';
-import { seedInitialDataIfEmpty } from '@/lib/database/seed';
 import { today } from '@/lib/utils';
 import type { UserProfile, CreateFoodEntryInput } from '@/types';
 import { User, Trash2, RotateCcw, LogOut, KeyRound, UserPlus, Shield } from 'lucide-react';
@@ -60,9 +59,8 @@ export default function ProfilePage() {
     showSuccess('Profil & Target Disimpan', 'Target nutrisi baru telah diaktifkan untuk hari ini dan seterusnya.');
   };
 
-  const handleResetData = () => {
-    clearAllData();
-    seedInitialDataIfEmpty();
+  const handleResetData = async () => {
+    await clearAllData();
     reloadDiary();
     reloadTargets();
     window.location.reload();

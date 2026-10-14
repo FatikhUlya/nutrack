@@ -4,12 +4,12 @@ import { useState } from 'react';
 import {
   X,
   Utensils,
-  Droplets,
   Scale,
   Plus,
-  Minus,
 } from 'lucide-react';
 import type { MealType, FoodEntry, NutritionTarget } from '@/types';
+import { saveWeightEntry } from '@/lib/database/storage';
+import { today } from '@/lib/utils';
 
 interface LogActionModalProps {
   isOpen: boolean;
@@ -21,7 +21,7 @@ interface LogActionModalProps {
   currentWeightKg?: number;
 }
 
-type LogTab = 'meal' | 'water' | 'weight';
+type LogTab = 'meal' | 'weight';
 
 export function LogActionModal({
   isOpen,
@@ -33,8 +33,8 @@ export function LogActionModal({
   currentWeightKg = 70,
 }: LogActionModalProps) {
   const [activeTab, setActiveTab] = useState<LogTab>('meal');
-  const [waterMl, setWaterMl] = useState<number>(1250);
   const [weight, setWeight] = useState<number>(currentWeightKg);
+  const [saved, setSaved] = useState(false);
 
   if (!isOpen) return null;
 
@@ -78,6 +78,16 @@ export function LogActionModal({
     }
   };
 
+  const handleSaveWeight = () => {
+    saveWeightEntry(weight, today());
+    if (onUpdateWeight) onUpdateWeight(weight);
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 900);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4 animate-fade-in font-sans">
       {/* Modal Container */}
@@ -95,7 +105,7 @@ export function LogActionModal({
           </button>
         </div>
 
-        {/* Segmented Control Tabs (Meal | Water | Weight) */}
+        {/* Segmented Control Tabs (Meal | Weight) */}
         <div className="flex items-center p-1 bg-[#17191B] border border-[#2D3134] rounded-2xl mb-6">
           <button
             type="button"
@@ -112,19 +122,6 @@ export function LogActionModal({
 
           <button
             type="button"
-            onClick={() => setActiveTab('water')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'water'
-                ? 'bg-[#292D30] text-[#67E8F9] shadow-xs'
-                : 'text-[#747C83] hover:text-[#F4F5F6]'
-            }`}
-          >
-            <Droplets className="h-3.5 w-3.5 text-[#67E8F9]" />
-            <span>Water</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => setActiveTab('weight')}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'weight'
@@ -133,7 +130,7 @@ export function LogActionModal({
             }`}
           >
             <Scale className="h-3.5 w-3.5 text-[#65D99A]" />
-            <span>Weight</span>
+            <span>Berat Badan</span>
           </button>
         </div>
 
@@ -157,7 +154,7 @@ export function LogActionModal({
                   <div className="w-8 h-8 rounded-full bg-[#D6FF3F] text-[#17191B] flex items-center justify-center mb-2.5 shadow-neon-glow font-black">
                     <Plus className="h-5 w-5 stroke-[3]" />
                   </div>
-                  <span className="text-sm font-extrabold text-[#F4F5F6]">Breakfast</span>
+                  <span className="text-sm font-extrabold text-[#F4F5F6]">Sarapan</span>
                   <span className={`text-[11px] font-bold mt-0.5 ${status.textColor}`}>
                     {status.text}
                   </span>
@@ -180,7 +177,7 @@ export function LogActionModal({
                   <div className="w-8 h-8 rounded-full bg-[#D6FF3F] text-[#17191B] flex items-center justify-center mb-2.5 shadow-neon-glow font-black">
                     <Plus className="h-5 w-5 stroke-[3]" />
                   </div>
-                  <span className="text-sm font-extrabold text-[#F4F5F6]">Snack</span>
+                  <span className="text-sm font-extrabold text-[#F4F5F6]">Camilan</span>
                   <span className={`text-[11px] font-bold mt-0.5 ${status.textColor}`}>
                     {status.text}
                   </span>
@@ -203,7 +200,7 @@ export function LogActionModal({
                   <div className="w-8 h-8 rounded-full bg-[#D6FF3F] text-[#17191B] flex items-center justify-center mb-2.5 shadow-neon-glow font-black">
                     <Plus className="h-5 w-5 stroke-[3]" />
                   </div>
-                  <span className="text-sm font-extrabold text-[#F4F5F6]">Lunch</span>
+                  <span className="text-sm font-extrabold text-[#F4F5F6]">Makan Siang</span>
                   <span className={`text-[11px] font-bold mt-0.5 ${status.textColor}`}>
                     {status.text}
                   </span>
@@ -226,7 +223,7 @@ export function LogActionModal({
                   <div className="w-8 h-8 rounded-full bg-[#D6FF3F] text-[#17191B] flex items-center justify-center mb-2.5 shadow-neon-glow font-black">
                     <Plus className="h-5 w-5 stroke-[3]" />
                   </div>
-                  <span className="text-sm font-extrabold text-[#F4F5F6]">Dinner</span>
+                  <span className="text-sm font-extrabold text-[#F4F5F6]">Makan Malam</span>
                   <span className={`text-[11px] font-bold mt-0.5 ${status.textColor}`}>
                     {status.text}
                   </span>
@@ -237,93 +234,74 @@ export function LogActionModal({
         )}
 
         {/* ========================================= */}
-        {/* TAB 2: WATER TRACKER                      */}
-        {/* ========================================= */}
-        {activeTab === 'water' && (
-          <div className="flex flex-col items-center py-2 space-y-4">
-            <div className="text-center">
-              <div className="text-3xl font-black text-[#67E8F9]">{waterMl} ml</div>
-              <div className="text-xs font-semibold text-[#747C83]">Target: 2,500 ml</div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setWaterMl((w) => Math.max(0, w - 250))}
-                className="h-10 w-10 rounded-full bg-[#17191B] border border-[#383D41] flex items-center justify-center text-[#F4F5F6] hover:border-[#67E8F9]"
-              >
-                <Minus className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWaterMl((w) => w + 250)}
-                className="px-4 py-2 rounded-xl bg-[#67E8F9]/15 border border-[#67E8F9]/30 text-[#67E8F9] font-bold text-xs hover:bg-[#67E8F9]/25"
-              >
-                + 1 Gelas (250ml)
-              </button>
-              <button
-                type="button"
-                onClick={() => setWaterMl((w) => w + 500)}
-                className="px-4 py-2 rounded-xl bg-[#67E8F9]/20 border border-[#67E8F9]/40 text-[#67E8F9] font-bold text-xs hover:bg-[#67E8F9]/30"
-              >
-                + 1 Botol (500ml)
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-3 rounded-2xl bg-[#D6FF3F] text-[#17191B] font-bold text-sm shadow-neon-glow hover:bg-[#C7F02D] mt-2"
-            >
-              Simpan Asupan Air
-            </button>
-          </div>
-        )}
-
-        {/* ========================================= */}
-        {/* TAB 3: WEIGHT TRACKER                     */}
+        {/* TAB 2: WEIGHT TRACKER (synced to profile) */}
         {/* ========================================= */}
         {activeTab === 'weight' && (
-          <div className="flex flex-col items-center py-2 space-y-4">
+          <div className="flex flex-col items-center py-2 space-y-5">
             <div className="text-center">
               <div className="text-3xl font-black text-[#65D99A]">{weight.toFixed(1)} kg</div>
-              <div className="text-xs font-semibold text-[#747C83]">Catat berat badan terkini</div>
+              <div className="text-xs font-semibold text-[#747C83] mt-1">
+                Catat berat badan terkini · tersinkronisasi ke profil
+              </div>
             </div>
 
+            {/* Increment/Decrement */}
             <div className="flex items-center gap-4">
               <button
                 type="button"
-                onClick={() => setWeight((w) => Number((w - 0.2).toFixed(1)))}
-                className="h-10 w-10 rounded-full bg-[#17191B] border border-[#383D41] flex items-center justify-center text-[#F4F5F6] hover:border-[#65D99A] font-bold"
+                onClick={() => setWeight((w) => Number((w - 0.5).toFixed(1)))}
+                className="h-11 w-11 rounded-full bg-[#17191B] border border-[#383D41] flex items-center justify-center text-[#F4F5F6] hover:border-[#65D99A] font-bold text-lg transition-colors"
               >
-                -
+                −
               </button>
               <input
                 type="number"
                 step="0.1"
+                min="20"
+                max="300"
                 value={weight}
                 onChange={(e) => setWeight(parseFloat(e.target.value) || 0)}
-                className="w-24 text-center font-black text-xl py-2 bg-[#17191B] border border-[#383D41] text-[#F4F5F6] rounded-xl focus:border-[#D6FF3F] focus:outline-none"
+                className="w-28 text-center font-black text-2xl py-2 bg-[#17191B] border border-[#383D41] text-[#F4F5F6] rounded-xl focus:border-[#D6FF3F] focus:outline-none transition-colors"
               />
               <button
                 type="button"
-                onClick={() => setWeight((w) => Number((w + 0.2).toFixed(1)))}
-                className="h-10 w-10 rounded-full bg-[#17191B] border border-[#383D41] flex items-center justify-center text-[#F4F5F6] hover:border-[#65D99A] font-bold"
+                onClick={() => setWeight((w) => Number((w + 0.5).toFixed(1)))}
+                className="h-11 w-11 rounded-full bg-[#17191B] border border-[#383D41] flex items-center justify-center text-[#F4F5F6] hover:border-[#65D99A] font-bold text-lg transition-colors"
               >
                 +
               </button>
             </div>
 
+            {/* Quick presets */}
+            <div className="flex gap-2">
+              {[-2, -1, +1, +2].map((delta) => (
+                <button
+                  key={delta}
+                  type="button"
+                  onClick={() => setWeight((w) => Number((w + delta).toFixed(1)))}
+                  className="px-3 py-1.5 rounded-lg bg-[#17191B] border border-[#383D41] text-[#A7ADB3] hover:border-[#65D99A] hover:text-[#65D99A] text-xs font-bold transition-colors"
+                >
+                  {delta > 0 ? `+${delta}` : delta} kg
+                </button>
+              ))}
+            </div>
+
             <button
               type="button"
-              onClick={() => {
-                if (onUpdateWeight) onUpdateWeight(weight);
-                onClose();
-              }}
-              className="w-full py-3 rounded-2xl bg-[#D6FF3F] text-[#17191B] font-bold text-sm shadow-neon-glow hover:bg-[#C7F02D] mt-2"
+              onClick={handleSaveWeight}
+              disabled={saved}
+              className={`w-full py-3 rounded-2xl font-bold text-sm shadow-neon-glow transition-all ${
+                saved
+                  ? 'bg-[#65D99A] text-[#17191B]'
+                  : 'bg-[#D6FF3F] text-[#17191B] hover:bg-[#C7F02D]'
+              }`}
             >
-              Simpan Berat Badan
+              {saved ? '✓ Tersimpan!' : 'Simpan Berat Badan'}
             </button>
+
+            <p className="text-[10px] text-[#747C83] text-center">
+              Data berat badan akan disimpan ke riwayat dan diperbarui di profil Anda
+            </p>
           </div>
         )}
       </div>

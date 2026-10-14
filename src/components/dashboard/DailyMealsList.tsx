@@ -44,10 +44,20 @@ const MEAL_CONFIG: Record<
 
 export function DailyMealsList({
   entries,
+  target,
   onSelectMealDetail,
   onQuickAdd,
 }: DailyMealsListProps) {
   const mealTypes: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+  // Proporsi alokasi kalori harian: 25% sarapan, 35% siang, 30% malam, 10% camilan
+  const totalDailyTarget = target?.calorieTargetKcal ?? 1850;
+  const mealTargetMap: Record<MealType, number> = {
+    breakfast: Math.round(totalDailyTarget * 0.25),
+    lunch: Math.round(totalDailyTarget * 0.35),
+    dinner: Math.round(totalDailyTarget * 0.30),
+    snack: Math.round(totalDailyTarget * 0.10),
+  };
 
   return (
     <div className="space-y-3">
@@ -58,6 +68,7 @@ export function DailyMealsList({
       <div className="space-y-3">
         {mealTypes.map((mealType) => {
           const config = MEAL_CONFIG[mealType];
+          const portionTarget = mealTargetMap[mealType];
           const mealEntries = entries.filter((e) => e.mealType === mealType);
           const totalCal = mealEntries.reduce((s, e) => s + e.caloriesKcal, 0);
 
@@ -91,7 +102,7 @@ export function DailyMealsList({
                     {totalCal}
                   </span>
                   <span className="text-xs font-semibold text-[#747C83]">
-                    / {config.portionKcal} KCAL
+                    / {portionTarget} KCAL
                   </span>
                 </div>
               </div>

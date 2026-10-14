@@ -86,6 +86,7 @@ export function FoodScannerModal({
   const [isDemoMode, setIsDemoMode] = useState(false);
 
   // Result state adjustments
+  const [itemMultipliers, setItemMultipliers] = useState<Record<number, number>>({});
   const [portionMultiplier, setPortionMultiplier] = useState<number>(1.0);
   const [servingUnit, setServingUnit] = useState<string>('porsi (100g)');
   const [activeItemIndex, setActiveItemIndex] = useState<number>(0);
@@ -245,12 +246,24 @@ export function FoodScannerModal({
     onClose();
   };
 
+  // Delete unwanted item from results
+  const handleDeleteItem = (indexToDelete: number) => {
+    if (!analysisResult) return;
+    const newItems = analysisResult.items.filter((_, i) => i !== indexToDelete);
+    if (newItems.length === 0) {
+      handleRetake();
+      return;
+    }
+    setAnalysisResult({ ...analysisResult, items: newItems });
+    setActiveItemIndex(0);
+  };
+
   // Confirm and save
   const handleConfirmSave = () => {
     if (!analysisResult || !analysisResult.items.length) return;
 
     const entriesToSave: CreateFoodEntryInput[] = analysisResult.items.map((item, idx) => {
-      const mult = idx === activeItemIndex ? portionMultiplier : 1.0;
+      const mult = itemMultipliers[idx] ?? portionMultiplier;
       return {
         consumptionDate: consumptionDate || new Date().toISOString().split('T')[0],
         mealType: selectedMealType,
@@ -279,10 +292,11 @@ export function FoodScannerModal({
   const nutritionScore = currentItem ? calculateNutritionScore(currentItem) : null;
 
   // Active item scaled macros
-  const activeCalories = currentItem ? Math.round(currentItem.caloriesKcal * portionMultiplier) : 0;
-  const activeProtein = currentItem ? Math.round(currentItem.proteinGrams * portionMultiplier) : 0;
-  const activeCarbs = currentItem ? Math.round(currentItem.carbsGrams * portionMultiplier) : 0;
-  const activeFat = currentItem ? Math.round(currentItem.fatGrams * portionMultiplier) : 0;
+  const activeMultiplier = itemMultipliers[activeItemIndex] ?? portionMultiplier;
+  const activeCalories = currentItem ? Math.round(currentItem.caloriesKcal * activeMultiplier) : 0;
+  const activeProtein = currentItem ? Math.round(currentItem.proteinGrams * activeMultiplier) : 0;
+  const activeCarbs = currentItem ? Math.round(currentItem.carbsGrams * activeMultiplier) : 0;
+  const activeFat = currentItem ? Math.round(currentItem.fatGrams * activeMultiplier) : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4 animate-fade-in">

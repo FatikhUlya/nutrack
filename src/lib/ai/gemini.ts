@@ -8,10 +8,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { foodScanAnalysisSchema } from '@/lib/validation/schemas';
 import type { FoodScanAnalysis } from '@/types';
 
-export const DEFAULT_PRIMARY_MODEL = 'gemini-3.6-flash';
+export const DEFAULT_PRIMARY_MODEL = 'gemini-2.0-flash';
 export const DEFAULT_FALLBACK_MODELS = [
-  'gemini-2.5-flash-lite-preview-06-17',
-  'gemini-2.0-flash',
+  'gemini-1.5-flash',
 ];
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
