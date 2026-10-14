@@ -25,11 +25,23 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 let currentUserId: string = 'local';
 
 export function setStorageUserId(userId: string): void {
-  currentUserId = userId;
+  currentUserId = userId || 'local';
+  if (typeof window !== 'undefined') {
+    if (userId && userId !== 'local') {
+      localStorage.setItem('nutrack:current_user_id', userId);
+    } else {
+      localStorage.removeItem('nutrack:current_user_id');
+    }
+  }
 }
 
 export function getStorageUserId(): string {
+  if (currentUserId && currentUserId !== 'local') {
+    return currentUserId;
+  }
   if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('nutrack:current_user_id');
+    if (stored && stored !== 'local') return stored;
     try {
       const raw = localStorage.getItem('nutrack:auth:local_user');
       if (raw) {
@@ -40,7 +52,7 @@ export function getStorageUserId(): string {
       // fallback
     }
   }
-  return currentUserId;
+  return currentUserId || 'local';
 }
 
 function getKeys(userId = getStorageUserId()) {
@@ -84,28 +96,69 @@ function removeKey(key: string): void {
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
 
-export function getProfile(): UserProfile | null {
-  return readJSON<UserProfile>(getKeys().PROFILE);
+export function getProfile(userId?: string): UserProfile | null {
+  return readJSON<UserProfile>(getKeys(userId).PROFILE);
 }
 
-export function saveProfile(
+/** Fetch authoritative profile directly from Supabase, cache to local, and return it. */
+export async function fetchProfileFromSupabase(userId: string): Promise<UserProfile | null> {
+  if (!isSupabaseConfigured() || !userId || userId === 'local') return null;
+
+  try {
+    const { data: profileData, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[storage] fetchProfileFromSupabase error:', error.message);
+      return null;
+    }
+
+    if (profileData) {
+      const mappedProfile: UserProfile = {
+        id: profileData.id,
+        displayName: profileData.display_name || 'Pengguna',
+        sex: profileData.sex || 'male',
+        age: Number(profileData.age) || 25,
+        weightKg: Number(profileData.weight_kg) || 65,
+        heightCm: Number(profileData.height_cm) || 170,
+        bodyFatPercent: profileData.body_fat_percent ? Number(profileData.body_fat_percent) : undefined,
+        activityLevel: profileData.activity_level || 'moderate',
+        goal: profileData.goal || 'maintenance',
+        createdAt: profileData.created_at || new Date().toISOString(),
+        updatedAt: profileData.updated_at || new Date().toISOString(),
+      };
+      writeJSON(getKeys(userId).PROFILE, mappedProfile);
+      return mappedProfile;
+    }
+    return null;
+  } catch (err) {
+    console.error('[storage] fetchProfileFromSupabase exception:', err);
+    return null;
+  }
+}
+
+export async function saveProfile(
   data: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
-): UserProfile {
-  const userId = getStorageUserId();
-  const existing = getProfile();
+  explicitUserId?: string,
+): Promise<UserProfile> {
+  const userId = explicitUserId || getStorageUserId();
+  const existing = getProfile(userId);
   const now = new Date().toISOString();
   const profile: UserProfile = {
     ...data,
-    id: data.id ?? existing?.id ?? userId ?? generateId(),
+    id: userId && userId !== 'local' ? userId : (data.id ?? existing?.id ?? generateId()),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
 
-  writeJSON(getKeys().PROFILE, profile);
+  writeJSON(getKeys(userId).PROFILE, profile);
 
-  // Sync to Supabase in background if connected
+  // Sync to Supabase directly if connected
   if (isSupabaseConfigured() && userId && userId !== 'local') {
-    supabase
+    const { error } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
@@ -118,16 +171,18 @@ export function saveProfile(
         activity_level: profile.activityLevel,
         goal: profile.goal,
         updated_at: now,
-      })
-      .then(({ error }) => {
-        if (error) console.error('[Supabase] Failed to upsert profile:', error.message);
-      });
+      }, { onConflict: 'id' });
+
+    if (error) {
+      console.error('[Supabase] Failed to upsert profile:', error.message);
+      throw new Error(`Gagal menyimpan profil ke server: ${error.message}`);
+    }
   }
 
   // Sync weight change to weight_log for today
   if (data.weightKg) {
     const todayStr = toDateString(new Date());
-    const weightEntries = getWeightLog();
+    const weightEntries = getWeightLog(userId);
     const existingWeight = weightEntries.find((e) => e.date === todayStr);
     if (!existingWeight || existingWeight.weightKg !== data.weightKg) {
       const entryId = existingWeight && isUuid(existingWeight.id) ? existingWeight.id : generateId();
@@ -135,10 +190,10 @@ export function saveProfile(
         ? weightEntries.map((e) => e.date === todayStr ? { ...e, weightKg: data.weightKg, createdAt: now } : e)
         : [...weightEntries, { id: entryId, userId, date: todayStr, weightKg: data.weightKg, createdAt: now }];
       updatedLog.sort((a, b) => a.date.localeCompare(b.date));
-      writeJSON(getKeys().WEIGHT_LOG, updatedLog);
+      writeJSON(getKeys(userId).WEIGHT_LOG, updatedLog);
 
       if (isSupabaseConfigured() && userId && userId !== 'local') {
-        supabase
+        const { error: wErr } = await supabase
           .from('weight_log')
           .upsert({
             id: entryId,
@@ -146,12 +201,16 @@ export function saveProfile(
             date: todayStr,
             weight_kg: data.weightKg,
             created_at: now,
-          })
-          .then(({ error }) => {
-            if (error) console.error('[Supabase] weight_log upsert from saveProfile failed:', error.message);
-          });
+          }, { onConflict: 'user_id,date' });
+        if (wErr) {
+          console.warn('[Supabase] weight_log upsert warning:', wErr.message);
+        }
       }
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('nutrack:profile_updated', { detail: profile }));
   }
 
   return profile;
@@ -631,7 +690,30 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
       writeJSON(getKeys(userId).SAVED_FOODS, mappedFoods);
     }
 
-    console.log(`[storage] Hydrated ${mappedEntries.length} entries, ${mappedTargets.length} targets, ${mappedFoods.length} saved foods from Supabase for user ${userId.slice(0, 8)}...`);
+    // 5. Fetch Weight Log
+    const { data: weightData } = await supabase
+      .from('weight_log')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: true });
+
+    if (weightData && weightData.length > 0) {
+      const mappedWeights: WeightEntry[] = weightData.map(w => ({
+        id: w.id,
+        userId: w.user_id,
+        date: w.date,
+        weightKg: Number(w.weight_kg),
+        notes: w.notes,
+        createdAt: w.created_at,
+      }));
+      writeJSON(getKeys(userId).WEIGHT_LOG, mappedWeights);
+    }
+
+    console.log(`[storage] Hydrated data from Supabase for user ${userId.slice(0, 8)}...`);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nutrack:hydrated', { detail: { userId } }));
+    }
   } catch (err) {
     console.error('[storage] Failed to hydrate from Supabase:', err);
   }
@@ -781,11 +863,11 @@ export function getWeightLog(userId?: string): WeightEntry[] {
   return readJSON<WeightEntry[]>(getKeys(userId).WEIGHT_LOG) ?? [];
 }
 
-export function saveWeightEntry(weightKg: number, date?: string, notes?: string): WeightEntry {
-  const userId = getStorageUserId();
+export function saveWeightEntry(weightKg: number, date?: string, notes?: string, explicitUserId?: string): WeightEntry {
+  const userId = explicitUserId || getStorageUserId();
   const dateStr = date ?? toDateString(new Date());
   const now = new Date().toISOString();
-  const entries = getWeightLog();
+  const entries = getWeightLog(userId);
 
   // Upsert: satu entri per hari
   const existingIndex = entries.findIndex((e) => e.date === dateStr);
@@ -805,7 +887,7 @@ export function saveWeightEntry(weightKg: number, date?: string, notes?: string)
   }
 
   entries.sort((a, b) => a.date.localeCompare(b.date));
-  writeJSON(getKeys().WEIGHT_LOG, entries);
+  writeJSON(getKeys(userId).WEIGHT_LOG, entries);
 
   // Sync to Supabase
   if (isSupabaseConfigured() && userId && userId !== 'local') {
@@ -818,16 +900,16 @@ export function saveWeightEntry(weightKg: number, date?: string, notes?: string)
         weight_kg: weightKg,
         notes,
         created_at: entry.createdAt,
-      })
+      }, { onConflict: 'user_id,date' })
       .then(({ error }) => {
         if (error) console.error('[Supabase] weight_log upsert failed:', error.message);
       });
   }
 
   // Also update profile current weight
-  const profile = getProfile();
-  if (profile) {
-    saveProfile({ ...profile, weightKg });
+  const profile = getProfile(userId);
+  if (profile && profile.weightKg !== weightKg) {
+    saveProfile({ ...profile, weightKg }, userId).catch(() => {});
   }
 
   return entry;

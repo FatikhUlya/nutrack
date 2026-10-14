@@ -80,13 +80,23 @@ CREATE TABLE IF NOT EXISTS public.saved_foods (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Helper Function: Cek apakah user saat ini adalah admin
+-- Helper Function: Cek apakah user saat ini adalah admin (aman tanpa rekursi ke profiles)
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
+  -- 1. Cek dari claims user_metadata pada JWT
+  IF COALESCE(auth.jwt() -> 'user_metadata' ->> 'role', '') = 'admin' THEN
+    RETURN TRUE;
+  END IF;
+
+  -- 2. Cek ke auth.users (tabel internal auth Supabase)
   RETURN EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid() AND role = 'admin'
+    SELECT 1 FROM auth.users
+    WHERE id = auth.uid()
+    AND (
+      COALESCE(raw_user_meta_data->>'role', '') = 'admin'
+      OR COALESCE(raw_app_meta_data->>'role', '') = 'admin'
+    )
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -107,11 +117,12 @@ DROP POLICY IF EXISTS "Users can delete own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile or admin can view all" ON public.profiles
   FOR SELECT USING (auth.uid() = id OR public.is_admin());
 CREATE POLICY "Users can insert own profile" ON public.profiles
-  FOR INSERT WITH CHECK (auth.uid() = id OR public.is_admin());
+  FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON public.profiles
-  FOR UPDATE USING (auth.uid() = id OR public.is_admin());
+  FOR UPDATE USING (auth.uid() = id OR public.is_admin())
+  WITH CHECK (auth.uid() = id OR public.is_admin());
 CREATE POLICY "Users can delete own profile" ON public.profiles
-  FOR DELETE USING (auth.uid() = id OR public.is_admin());
+  FOR DELETE USING (auth.uid() = id);
 
 -- RLS Nutrition Targets
 ALTER TABLE public.nutrition_targets ENABLE ROW LEVEL SECURITY;

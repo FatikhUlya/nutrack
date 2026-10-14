@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Helper to extract AuthUser from Supabase User and profile table
   const fetchAndMapUser = useCallback(async (sbUser: SupabaseUser): Promise<AuthUser> => {
     let role: 'admin' | 'user' = (sbUser.user_metadata?.role as 'admin' | 'user') || 'user';
+    let profileDisplayName: string | undefined;
 
     try {
       const { data: profile } = await supabase
@@ -51,6 +52,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select('role, display_name')
         .eq('id', sbUser.id)
         .maybeSingle();
+
+      if (profile?.display_name) {
+        profileDisplayName = profile.display_name;
+      }
 
       if (profile?.role) {
         role = profile.role as 'admin' | 'user';
@@ -70,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       id: sbUser.id,
       email: sbUser.email || '',
       displayName:
+        profileDisplayName ||
         sbUser.user_metadata?.full_name ||
         sbUser.user_metadata?.display_name ||
         sbUser.email?.split('@')[0] ||
@@ -148,6 +154,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         if (error) {
           return { error: error.message };
+        }
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(LOCAL_USER_KEY);
         }
         return { error: null };
       } else {
@@ -309,8 +318,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     setSession(null);
+    setStorageUserId('local');
     if (typeof window !== 'undefined') {
       localStorage.removeItem(LOCAL_USER_KEY);
+      localStorage.removeItem('nutrack:current_user_id');
     }
   }, [configured]);
 

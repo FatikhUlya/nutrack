@@ -23,10 +23,11 @@ import {
 
 interface ProfileFormProps {
   initialProfile: UserProfile | null;
-  onSave: (data: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onSave: (data: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'>) => Promise<any> | void;
+  isLoading?: boolean;
 }
 
-export function ProfileForm({ initialProfile, onSave }: ProfileFormProps) {
+export function ProfileForm({ initialProfile, onSave, isLoading = false }: ProfileFormProps) {
   const [displayName, setDisplayName] = useState(initialProfile?.displayName ?? 'Pengguna');
   const [sex, setSex] = useState<'male' | 'female'>(initialProfile?.sex ?? 'male');
   const [age, setAge] = useState<number | string>(initialProfile?.age ?? 25);
@@ -41,18 +42,19 @@ export function ProfileForm({ initialProfile, onSave }: ProfileFormProps) {
   const [goal, setGoal] = useState<Goal>(initialProfile?.goal ?? 'maintenance');
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Sync state if initialProfile loads asynchronously
   useEffect(() => {
     if (initialProfile) {
-      if (initialProfile.displayName) setDisplayName(initialProfile.displayName);
-      if (initialProfile.sex) setSex(initialProfile.sex);
-      if (initialProfile.age) setAge(initialProfile.age);
-      if (initialProfile.weightKg) setWeightKg(initialProfile.weightKg);
-      if (initialProfile.heightCm) setHeightCm(initialProfile.heightCm);
+      if (initialProfile.displayName !== undefined) setDisplayName(initialProfile.displayName);
+      if (initialProfile.sex !== undefined) setSex(initialProfile.sex);
+      if (initialProfile.age !== undefined) setAge(initialProfile.age);
+      if (initialProfile.weightKg !== undefined) setWeightKg(initialProfile.weightKg);
+      if (initialProfile.heightCm !== undefined) setHeightCm(initialProfile.heightCm);
       if (initialProfile.bodyFatPercent !== undefined) setBodyFatPercent(initialProfile.bodyFatPercent);
-      if (initialProfile.activityLevel) setActivityLevel(initialProfile.activityLevel);
-      if (initialProfile.goal) setGoal(initialProfile.goal);
+      if (initialProfile.activityLevel !== undefined) setActivityLevel(initialProfile.activityLevel);
+      if (initialProfile.goal !== undefined) setGoal(initialProfile.goal);
     }
   }, [initialProfile]);
 
@@ -75,22 +77,29 @@ export function ProfileForm({ initialProfile, onSave }: ProfileFormProps) {
     });
   }, [sex, age, weightKg, heightCm, activityLevel, goal]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    onSave({
-      displayName: displayName.trim() || 'Pengguna',
-      sex,
-      age: Number(age) || 25,
-      weightKg: Number(weightKg) || 70,
-      heightCm: Number(heightCm) || 175,
-      bodyFatPercent: bodyFatPercent !== undefined && bodyFatPercent !== '' ? Number(bodyFatPercent) : undefined,
-      activityLevel,
-      goal,
-    });
+    try {
+      await onSave({
+        displayName: displayName.trim() || 'Pengguna',
+        sex,
+        age: Number(age) || 25,
+        weightKg: Number(weightKg) || 70,
+        heightCm: Number(heightCm) || 175,
+        bodyFatPercent: bodyFatPercent !== undefined && bodyFatPercent !== '' ? Number(bodyFatPercent) : undefined,
+        activityLevel,
+        goal,
+      });
 
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch {
+      // Caller shows toast error
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const goals: Goal[] = ['cut', 'maintenance', 'lean_bulk'];
@@ -238,8 +247,8 @@ export function ProfileForm({ initialProfile, onSave }: ProfileFormProps) {
               </span>
             )}
 
-            <Button type="submit" variant="primary" className="font-bold">
-              Simpan Profil & Perbarui Target
+            <Button type="submit" variant="primary" className="font-bold" disabled={isSubmitting || isLoading}>
+              {isSubmitting ? 'Menyimpan ke Cloud...' : 'Simpan Profil & Perbarui Target'}
             </Button>
           </div>
         </Card>
