@@ -10,8 +10,7 @@ import type { FoodScanAnalysis } from '@/types';
 
 export const DEFAULT_PRIMARY_MODEL = 'gemini-2.0-flash';
 export const DEFAULT_FALLBACK_MODELS = [
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-flash-latest',
+  'gemini-2.5-flash',
 ];
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
