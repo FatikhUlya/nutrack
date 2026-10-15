@@ -10,7 +10,8 @@ import type { FoodScanAnalysis } from '@/types';
 
 export const DEFAULT_PRIMARY_MODEL = 'gemini-2.0-flash';
 export const DEFAULT_FALLBACK_MODELS = [
-  'gemini-1.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash-latest',
 ];
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -121,13 +122,13 @@ export type AnalyzeImageResponse = AnalyzeImageResult | AnalyzeImageError;
  * Analyze a food image using Google Gemini with fallback models and retry logic.
  *
  * Strategy:
- * 1. Try the primary model (gemini-3.6-flash)
+ * 1. Try the primary model (gemini-2.0-flash)
  * 2. If it fails (unavailable / high demand / 429 / 503), retry up to MAX_RETRIES_PER_MODEL
  *    with exponential backoff
  * 3. If primary model is exhausted or fails, automatically fall through to the next
  *    fallback models:
- *      - gemini-2.5-flash-lite-preview-06-17
- *      - gemini-2.0-flash
+ *      - gemini-2.0-flash-lite
+ *      - gemini-1.5-flash-latest
  *
  * @param imageBase64 - Base64-encoded image data (without data: prefix)
  * @param mimeType    - MIME type of the image
